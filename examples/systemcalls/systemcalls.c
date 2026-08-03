@@ -16,6 +16,11 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int ret = system(cmd);
+    if(ret != 0) {
+        return false;
+    }
+
 
     return true;
 }
@@ -45,12 +50,8 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
 /*
- * TODO:
  *   Execute a system command by calling fork, execv(),
  *   and wait instead of system (see LSP page 161).
  *   Use the command[0] as the full path to the command to execute
@@ -58,10 +59,27 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    int pid = fork();
+    if(pid == -1) {
+        perror("fork");
+        abort();
+    }
+    if(pid == 0){
+        // child
+        execv(command[0], command);
+        perror("execv");
+        exit(1);
+    }
+    else{
+        int status;
+        waitpid(pid, &status, 0);
+        va_end(args);
+        return (WIFEXITED(status) && WEXITSTATUS(status) ==0);
+    }
 
+    // shouldn't get here
     va_end(args);
-
-    return true;
+    return false;
 }
 
 /**
@@ -79,21 +97,31 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     {
         command[i] = va_arg(args, char *);
     }
+    
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+    
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if(fd<0) { perror("open"); abort(); }
+    
+    pid_t pid = fork();
+    int status;
+    switch (pid) {
+        case -1: 
+            perror("fork");
+            abort();
+        case 0:
+            if (dup2(fd, 1) < 0) { perror("dup2"); abort(); }
+            close(fd);
+            execv(command[0], command); perror("execv"); abort();
+        default:
+            waitpid(pid, &status, 0);
 
+            close(fd);
+            va_end(args);
+            return (WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    }
 
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
-
+    // shouldn't get here
     va_end(args);
-
-    return true;
+    return false;
 }
